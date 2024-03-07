@@ -1,15 +1,63 @@
-import React from 'react'
+import React, {ChangeEvent, FormEvent, useState} from 'react'
 import styles from '../../styles/pages/dashboard.module.css'
 import Head from 'next/head'
+
+//autentication
 import { GetServerSideProps } from 'next'
 import { getSession } from 'next-auth/react'
+
+//components
 import TextArea from '../../components/textarea'
+
+//icons
 import { FiShare2 } from 'react-icons/fi'
 import { FaTrash } from 'react-icons/fa'
 
-type Props = {}
+//firebase
+import { db } from '@/services/firebase'
+import { addDoc, collection } from 'firebase/firestore'
 
-const Dashboard = (props: Props) => {
+type Props = {
+  user: {
+    email: string
+  }
+}
+
+const Dashboard = ({user}: Props) => {
+
+  const [input, setInput] = useState("")
+  const [publicTask, setPublicTask] = useState(false)
+
+  const docCollection = collection(db, "tarefas")
+
+  const handleChangeInput = (e: ChangeEvent<HTMLInputElement>) => {
+    setPublicTask(e.target.checked)
+  }
+
+  async function handleSubmit(e:FormEvent){
+    e.preventDefault();
+
+    if(input === "") return;
+
+    try {
+
+      //criando um novo documento no banco 
+      await addDoc(docCollection, {
+        //adicionando os valores que serão passados para dentro do banco
+        tarefa: input,
+        created: new Date(),
+        user: user?.email,
+        public: publicTask
+      })
+
+      setInput("")
+      setPublicTask(false)
+
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
   return (
     <div className={styles.container}>
       <Head>
@@ -20,10 +68,23 @@ const Dashboard = (props: Props) => {
         <section className={styles.content}>
           <div className={styles.contentForm}>
             <h1 className={styles.title}>Qual e a sua tarefa?</h1>
-            <form>
-              <TextArea placeholder='Digite qual e a sua tarefa...'/>
+            <form onSubmit={handleSubmit}>
+              <TextArea 
+                placeholder='Digite qual e a sua tarefa...' 
+                value={input} 
+                onChange={(e:ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+                /*
+                  obs: precisamos passar o "ChangeEvent<HTMLTextAreaElement>" como tipagem para podermos pegar o value
+                  caso contrario dara erro na aplicação pois o typescript n vai reconhecer o value
+                */
+              />
               <div className={styles.checkboxArea}>
-                <input type="checkbox" className={styles.chackbox} />
+                <input 
+                  type="checkbox" 
+                  className={styles.chackbox} 
+                  checked={publicTask}
+                  onChange={handleChangeInput}
+                />
                 <label>Deixar a tarefa publica?</label>
               </div>
               <button type='submit' className={styles.btn}>Registrar</button>
@@ -78,7 +139,11 @@ export const getServerSideProps: GetServerSideProps = async ({req}) => {
   }
 
   return {
-    props:{}
+    props:{
+      user:{
+        email: session?.user?.email
+      }
+    }
   }
 }
 
