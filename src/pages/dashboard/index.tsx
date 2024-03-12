@@ -1,6 +1,12 @@
-import React, {ChangeEvent, FormEvent, useState} from 'react'
+//estilos
 import styles from '../../styles/pages/dashboard.module.css'
+
+//next
 import Head from 'next/head'
+import Link from 'next/link'
+
+//hoocks
+import React, {ChangeEvent, FormEvent, useState, useEffect} from 'react'
 
 //autentication
 import { GetServerSideProps } from 'next'
@@ -15,20 +21,60 @@ import { FaTrash } from 'react-icons/fa'
 
 //firebase
 import { db } from '@/services/firebase'
-import { addDoc, collection } from 'firebase/firestore'
+import { addDoc, collection, query, onSnapshot, where, orderBy, doc, deleteDoc} from 'firebase/firestore'
 
+//tipagem 
 type Props = {
   user: {
     email: string
   }
+}
+interface TaskProps{
+  id: string,
+  created: Date,
+  public: boolean,
+  tarefa: string,
+  user: string
 }
 
 const Dashboard = ({user}: Props) => {
 
   const [input, setInput] = useState("")
   const [publicTask, setPublicTask] = useState(false)
+  const [tasks, setTasks] = useState<TaskProps[]>([])
 
   const docCollection = collection(db, "tarefas")
+
+  useEffect(() => {
+
+    async function loadTasks(){
+      //ordenando e filtrando os valores do banco
+      const q = query(
+        docCollection,
+        orderBy("created", "desc"), //nesse metodo estamos ordenando em ordem decrescente de acordo com a data de criação
+        where('user', '==', user?.email) //realizando o filtro para trazer somente os postes do proprio usuario logado
+      )
+
+      onSnapshot(q, (snapshot) => { //basicamente esse metodo ira traze os valores do banco em tempo real
+        const lista = [] as TaskProps[];
+
+        snapshot.forEach((doc) => {
+          lista.push({//inserindo os valores dentro do arrei 'lista'
+            id: doc.id,
+            tarefa: doc.data().tarefa,
+            created: doc.data().created,
+            user: doc.data().user,
+            public: doc.data().public
+          })
+        })
+
+        setTasks(lista)
+      })
+    }
+
+    loadTasks();
+
+  }, [user?.email])
 
   const handleChangeInput = (e: ChangeEvent<HTMLInputElement>) => {
     setPublicTask(e.target.checked)
@@ -56,6 +102,18 @@ const Dashboard = ({user}: Props) => {
     } catch (err) {
       console.log(err)
     }
+  }
+
+  async function handleShare (id: string){
+    await navigator.clipboard.writeText( //pegando a url com o id do post
+      `${process.env.NEXT_PUBLIC_URL}/task/${id}`
+    )
+  }
+
+  async function handleDeleteTask(id: string) {
+    const docRef = doc(db, 'tarefas', id)//passando a referencia do post que sera deletado atravez do seu id
+
+    await deleteDoc(docRef)//removendo o post do banco de acordo com id passado como referencia 
   }
 
   return (
@@ -95,26 +153,37 @@ const Dashboard = ({user}: Props) => {
         <section className={styles.taskContainer}>
           <h1>Minhas tarefas</h1>
 
-          <article className={styles.task}>
-            <div className={styles.tagContainer}>
-              <label className={styles.tag}>PUBLICO</label>
-              <button className={styles.btnShare}>
-                <FiShare2
-                  size={22}
-                  color='#3183ff'
-                />
-              </button>
-            </div>
-            <div className={styles.taskContent}>
-              <p>Lorem ipsum dolor sit amet consectetur adipisicing elit.</p>
-              <button className={styles.btnTrash}>
-                <FaTrash
-                  size={24}
-                  color='#ea3140'
-                />
-              </button>
-            </div>
-          </article>
+          {tasks && tasks.map((task) => (
+            <article className={styles.task} key={task.id}>
+              {task.public && (
+                <div className={styles.tagContainer}>
+                  <label className={styles.tag}>PUBLICO</label>
+                  <button className={styles.btnShare} onClick={() => handleShare(task.id)}>
+                    <FiShare2
+                      size={22}
+                      color='#3183ff'
+                    />
+                  </button>
+                </div>
+              )}
+              <div className={styles.taskContent}>
+                {task.public ? (
+                  <Link href={`/task/${task.id}`}>
+                    <p>{task.tarefa}</p>
+                  </Link>
+                ): (
+                  <p>{task.tarefa}</p>
+                )}
+                <button className={styles.btnTrash} onClick={() => handleDeleteTask(task.id)}>
+                  <FaTrash
+                    size={24}
+                    color='#ea3140'
+                  />
+                </button>
+              </div>
+            </article>
+          ))}
+
         </section>
       </main>
     </div>
@@ -123,6 +192,7 @@ const Dashboard = ({user}: Props) => {
 
 export default Dashboard;
 
+//essa função tem como objetivo carregar informações do lado do servidor antes mesmo de renderizar a pagina, o famoso (SSR)
 export const getServerSideProps: GetServerSideProps = async ({req}) => {
 
   const session = await getSession({req}) //basicamente com esse metodo iremos obter os dados do usuario logado 
